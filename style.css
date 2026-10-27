@@ -133,3 +133,5 @@ input.box { width: 100%; min-height: 44px; border: 1px solid var(--line2); borde
 @keyframes sp { to { transform: rotate(360deg); } }
 .hidden { display: none !important; }
 video.scan { width: 100%; border-radius: 12px; background: #000; }
+.shake { animation: shk .4s; }
+@keyframes shk { 20%,60% { transform: translateX(-8px); } 40%,80% { transform: translateX(8px); } }

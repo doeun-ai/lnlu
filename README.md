@@ -22,7 +22,7 @@
 2. `github` 폴더 안의 파일을 저장소 맨 위에 그대로 올립니다: index.html, app.js, style.css, sw.js, manifest.webmanifest, 아이콘들.
 3. **Settings › Pages**에서 Branch를 `main` / `/(root)`로 저장합니다.
 4. 1~2분 뒤 나오는 주소(https://아이디.github.io/저장소이름/)로 들어갑니다.
-5. 첫 화면에 PIN을 넣고 **연결하기**를 누릅니다. (배포 주소는 앱에 들어 있어요)
+5. 첫 화면 숫자 키패드로 PIN을 누르고 **확인**을 누릅니다. (배포 주소는 앱에 들어 있어요)
 6. 홈 화면에 추가합니다.
    - 아이폰: Safari 공유 버튼 › 홈 화면에 추가
    - 안드로이드: Chrome 메뉴 › 앱 설치

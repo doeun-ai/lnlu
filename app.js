@@ -862,11 +862,19 @@ VIEWS.ledger = function () {
 // ───────── 연결 설정 ─────────
 VIEWS.settings = function () {
   var u = S.ui;
-  if (!u.f) u.f = { url: S.cfg.url, pin: S.cfg.pin };
-  return subHead('PIN', S.data ? '#/ledger' : '#/settings', '') + '<main>' +
-    '<section class="card"><label class="field col"><span class="lbl">PIN</span><input id="s_pin" class="box" type="password" inputmode="numeric" data-m="f.pin" value="' + esc(u.f.pin) + '" style="text-align:left"></label></section>' +
-    '<button type="button" class="btn" data-a="saveCfg" style="background:#D6E6F9;color:#1F3F66">' + (u.busy ? '<span class="spin"></span>연결 중' : '연결하기') + '</button>' +
-    (S.data ? '<button type="button" class="btn" data-a="reload" style="background:#FFFFFF;color:var(--ink2);font-weight:600">시트에서 다시 불러오기</button>' : '') +
+  if (u.pin == null) u.pin = '';
+  var n = Math.max(4, u.pin.length);
+  var dots = '';
+  for (var i = 0; i < n; i++) dots += '<span style="width:14px;height:14px;border-radius:7px;' + (i < u.pin.length ? 'background:var(--ink)' : 'border:1.5px solid var(--ghost)') + '"></span>';
+  var key = function (v, label, extra) { return '<button type="button" data-a="pinKey" data-v="' + v + '" aria-label="' + (label || v) + '" style="height:68px;border:0;border-radius:34px;background:' + (extra ? 'transparent' : '#FFFFFF') + ';font-size:' + (extra ? '16px' : '28px') + ';font-weight:' + (extra ? 600 : 500) + ';color:' + (v === 'ok' ? 'var(--blue)' : 'var(--ink)') + '">' + (label || v) + '</button>'; };
+  return (S.data ? subHead('PIN 변경', '#/ledger', '') : '') + '<main style="align-items:center;justify-content:center;gap:28px;min-height:' + (S.data ? 'calc(100vh - 56px)' : '100vh') + '">' +
+    '<div style="display:flex;flex-direction:column;align-items:center;gap:18px"><b style="font-size:20px">' + (u.busy ? '<span class="spin"></span>확인 중' : 'PIN 입력') + '</b>' +
+    '<div class="' + (u.shake ? 'shake' : '') + '" style="display:flex;gap:16px;height:16px;align-items:center">' + dots + '</div>' +
+    '<span style="font-size:13px;color:var(--red);min-height:18px">' + esc(u.err || '') + '</span></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(3,68px);gap:16px 24px">' +
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(function (k) { return key(k); }).join('') +
+    key('ok', '확인', true) + key('0') + key('del', '⌫', true) + '</div>' +
+    (S.data ? '<button type="button" data-a="reload" class="text-btn" style="font-size:14px;color:var(--faint)">시트에서 다시 불러오기</button>' : '') +
     '</main>';
 };
 
@@ -1059,12 +1067,23 @@ var ACT = {
   bMore: function () { S.ui.limit += 100; render(); },
   tDebt: function () { S.ui.debtOpen = !S.ui.debtOpen; render(); },
   tPay: function () { S.ui.payOpen = !S.ui.payOpen; render(); },
-  saveCfg: function () {
-    var f = S.ui.f; S.cfg = { url: API_URL, pin: String(f.pin || '').trim() };
-    if (!S.cfg.pin) { toast('PIN을 입력해 주세요'); return; }
-    lsSet('hm_cfg', { pin: S.cfg.pin }); S.ui.busy = true; render();
-    api('load').then(function (d) { S.data = d; persist(); S.ui.busy = false; toast('연결됐어요'); go('home'); })
-      .catch(function (e) { S.ui.busy = false; toast('연결 실패 · ' + e.message); render(); });
+  pinKey: function (v) {
+    var u = S.ui; if (u.busy) return;
+    u.err = ''; u.shake = false;
+    if (v === 'del') u.pin = u.pin.slice(0, -1);
+    else if (v === 'ok') { if (u.pin) ACT.tryPin(); return; }
+    else if (u.pin.length < 8) u.pin += v;
+    render();
+  },
+  tryPin: function () {
+    var u = S.ui, prev = S.cfg.pin;
+    S.cfg = { url: API_URL, pin: u.pin }; u.busy = true; render();
+    api('load').then(function (d) {
+      lsSet('hm_cfg', { pin: u.pin }); S.data = d; persist(); u.busy = false; go('home');
+    }).catch(function (e) {
+      S.cfg.pin = prev; u.busy = false; u.pin = ''; u.shake = true;
+      u.err = /PIN/.test(e.message) ? 'PIN이 맞지 않아요' : '연결 실패 · ' + e.message; render();
+    });
   },
   reload: function () { loadAll().then(function () { toast('다시 불러왔어요'); }); }
 };
