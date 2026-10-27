@@ -378,7 +378,7 @@ VIEWS.home = function () {
     (todos.length ? todos.map(function (t) {
       return '<a class="list-row" href="' + t.href + '"><span class="dot" style="background:' + t.dot + '"></span><span style="flex:1 1 auto;font-size:14px;font-weight:600;color:' + (t.red ? 'var(--red)' : 'var(--ink)') + '">' + esc(t.title) + (t.est ? '<span style="margin-left:6px;font-size:12px;font-weight:400;color:var(--faint)">' + esc(t.est) + '</span>' : '') + '</span><span class="act ' + t.cls + '">' + t.act + '</span></a>';
     }).join('') : '<div style="padding:14px 16px 18px;font-size:14px;color:#1A6B30">판매수량 등록과 정산이 모두 끝났어요</div>') + '</section>' +
-    '<div class="tiles"><a class="tile" href="#/register?mode=manual" style="background:#D6E6F9;color:#1F3F66"><b>수기 등록</b><span style="color:#3B5A80">판매 · 입고 한 건씩</span></a><a class="tile" href="#/register?mode=auto" style="background:#FCE4D8;color:#6B3015"><b>자동 등록</b><span style="color:#8A5038">붙여넣기로 한 번에</span></a></div>' +
+    '<div class="tiles"><a class="tile" href="#/register?kind=sale&mode=manual" style="background:#D6E6F9;color:#1F3F66"><b>수기 판매등록</b><span style="color:#3B5A80">한 건씩</span></a><a class="tile" href="#/register?kind=sale&mode=auto" style="background:#FCE4D8;color:#6B3015"><b>자동 판매등록</b><span style="color:#8A5038">붙여넣기로 한 번에</span></a></div>' +
     '<section aria-label="재고 확인" style="display:flex;flex-direction:column;gap:8px"><div class="sec-title"><h2>재고 확인</h2><span class="eyebrow">지금 기준 · 전체 ' + allStock + '개</span></div><div class="card" style="border-radius:16px">' + (low.length ? low.join('') : '<div class="empty">작업실 재고가 1개 이하인 제품이 없어요</div>') + '</div></section>' +
     '</main>' + nav('home');
 };
@@ -440,7 +440,7 @@ VIEWS.channel = function (r) {
     '<section class="card pad" aria-label="매출 요약"><div style="display:flex;flex-direction:column;gap:4px"><span class="eyebrow">순매출</span><span style="font-size:30px;font-weight:700;letter-spacing:-0.02em">' + won(rev - extra) + '</span></div>' +
     '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px"><div class="box2"><small>누적매출</small><b>' + won(rev) + '</b></div><div class="box2"><small>부가비용</small><b>' + won(-extra) + '</b></div></div></section>' +
     '<section style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px"><div class="card pad" style="gap:4px;padding:16px"><span class="eyebrow">보유재고</span><b style="font-size:22px">' + chStockTotal(c.id) + '개</b></div><div class="card pad" style="gap:4px;padding:16px"><span class="eyebrow">누적판매</span><b style="font-size:22px">' + sold + '개</b></div></section>' +
-    (closed ? '' : '<div class="tiles"><a class="tile" href="#/register?kind=in&mode=manual&ch=' + encodeURIComponent(c.id) + '" style="background:var(--in-bg);color:var(--in-ink);min-height:56px"><b>입고 등록</b></a><a class="tile" href="#/register?kind=sale&mode=' + (c.defaultMode === '수기' ? 'manual' : 'auto') + '&ch=' + encodeURIComponent(c.id) + '" style="background:var(--sale-bg);color:var(--sale-ink);min-height:56px"><b>판매 등록</b></a></div>') +
+    (closed ? '' : '<div class="tiles"><a class="tile" href="#/register?kind=sale&mode=' + (c.defaultMode === '수기' ? 'manual' : 'auto') + '&ch=' + encodeURIComponent(c.id) + '" style="background:var(--sale-bg);color:var(--sale-ink);min-height:56px"><b>판매 등록</b></a><a class="tile" href="#/register?kind=in&mode=manual&ch=' + encodeURIComponent(c.id) + '" style="background:var(--in-bg);color:var(--in-ink);min-height:56px"><b>입고 등록</b></a></div>') +
     '<section class="card pad" aria-label="월별 판매수량"><div style="display:flex;justify-content:space-between;align-items:baseline"><h2>월별 판매수량</h2></div><div style="display:flex;align-items:flex-end;gap:10px;height:120px">' + bars + '</div></section>' +
     '<section aria-label="제품별 재고" style="display:flex;flex-direction:column;gap:8px"><div class="sec-title"><h2>제품별 재고</h2><a href="#/stock" style="font-size:14px;font-weight:600">작업실</a></div>' +
     '<div class="chips"><button type="button" class="chip warn' + (u.low ? ' on' : '') + '" data-a="toggleLow" aria-pressed="' + !!u.low + '">1개 이하</button></div>' +
@@ -471,7 +471,7 @@ function batches(rows) {
 }
 function logSection(logs) {
   var u = S.ui, n = u.logMore ? 40 : 6;
-  var st = { '판매': ['#D6E6F9', '#1F3F66'], '입고': ['#E2F1E6', '#1E5631'], '발주': ['#E2F1E6', '#1E5631'], '하자마케팅': ['#FCE4D8', '#6B3015'] };
+  var st = { '판매': ['#D6E6F9', '#1F3F66'], '입고': ['#E2F1E6', '#1E5631'], '발주': ['#FBEFC8', '#6B4E14'], '하자마케팅': ['#FCE4D8', '#6B3015'] };
   var html = logs.slice(0, n).map(function (l, i) {
     var tot = l.items.reduce(function (a, x) { return a + num(x.qty); }, 0);
     var text = l.kind === '판매' ? mLabel(l.saleMonth || l.date.slice(0, 7)) + ' 판매 ' + tot + '개' : (l.kind === '입고' && tot < 0 ? '회수 ' + Math.abs(tot) + '개' : l.items.length + '종 ' + tot + '개');
@@ -682,7 +682,7 @@ VIEWS.stock = function () {
   return '<main class="with-nav"><header class="top"><div style="display:flex;flex-direction:column;gap:4px"><h1>작업실</h1></div><a href="#/product/new" class="act" style="padding:8px 14px;font-size:14px;background:#FFFFFF">+ 제품</a></header>' +
     '<section class="card pad" aria-label="작업실 재고"><span class="eyebrow">작업실 재고</span><span class="big">' + (tot.order - tot.dm - tot.inq) + '개</span>' +
     '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px"><div class="box2"><small>발주</small><b>' + tot.order + '</b></div><div class="box2"><small>하자·마케팅</small><b>−' + tot.dm + '</b></div><div class="box2"><small>입점</small><b>−' + tot.inq + '</b></div></div></section>' +
-    '<div class="tiles"><a class="tile" href="#/stockentry" style="background:var(--in-bg);color:var(--in-ink);min-height:56px"><b>발주 등록</b></a><a class="tile" href="#/register?kind=in&mode=manual" style="background:var(--sale-bg);color:var(--sale-ink);min-height:56px"><b>채널 입고</b></a></div>' +
+    '<div class="tiles"><a class="tile" href="#/stockentry" style="background:var(--ord-bg);color:var(--ord-ink);min-height:56px"><b>발주 등록</b></a><a class="tile" href="#/register?kind=in&mode=manual" style="background:var(--in-bg);color:var(--in-ink);min-height:56px"><b>입고 등록</b></a></div>' +
     '<section aria-label="제품별 재고" style="display:flex;flex-direction:column;gap:8px"><div class="sec-title"><h2>제품</h2><span class="eyebrow">' + activeProducts().length + '종</span></div>' +
     '<label class="search">' + ICON.search + '<input id="st_q" type="search" data-m="q" data-live="1" value="' + esc(u.q || '') + '" placeholder="제품 검색" aria-label="제품 검색"></label>' +
     chipsHtml(['전체'].concat(categories()).concat(['1개 이하']), u.cat, 'stCat', function (v) { return v === '1개 이하' ? 'warn' : ''; }) +
@@ -705,7 +705,7 @@ VIEWS.stockentry = function () {
       var after = u.kind === '발주' ? s + q : s - q;
       return '<div class="prod"><div class="nm"><b>' + esc(prodName(p.code)) + '</b><small>작업실 ' + s + (q ? ' → ' + after : '') + '</small></div>' + stepper('qty', p.code, u.qty[p.code], prodName(p.code)) + '</div>';
     }).join('') + '</div></main>' +
-    '<div class="footer-bar"><div class="sum">' + kinds + '종 · ' + label + ' ' + tq + '개</div><button type="button" class="btn" data-a="seSave" style="background:' + (u.kind === '발주' ? 'var(--in-bg)' : 'var(--loan-bg)') + ';color:' + (u.kind === '발주' ? 'var(--in-ink)' : 'var(--loan-ink)') + '"' + (kinds ? '' : ' disabled') + '>' + label + ' 등록</button></div>';
+    '<div class="footer-bar"><div class="sum">' + kinds + '종 · ' + label + ' ' + tq + '개</div><button type="button" class="btn" data-a="seSave" style="background:' + (u.kind === '발주' ? 'var(--ord-bg)' : 'var(--loan-bg)') + ';color:' + (u.kind === '발주' ? 'var(--ord-ink)' : 'var(--loan-ink)') + '"' + (kinds ? '' : ' disabled') + '>' + label + ' 등록</button></div>';
 };
 
 // ───────── 제품 추가 · 수정 ─────────
