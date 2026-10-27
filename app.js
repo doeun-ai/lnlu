@@ -242,15 +242,24 @@ window.addEventListener('hashchange', onRoute);
 
 // ───────── 렌더 ─────────
 function render() {
-  var ae = document.activeElement, fid = ae && ae.id, sel = null;
+  var ae = document.activeElement, fid = ae && ae.id, sel = null, digits = null;
   try { if (fid && ae.selectionStart != null) sel = [ae.selectionStart, ae.selectionEnd]; } catch (e) {}
+  // 금액칸(쉼표 자동)은 커서 앞 숫자 개수로 위치를 되살림
+  if (fid && ae.dataset && ae.dataset.money && sel) digits = ae.value.slice(0, sel[0]).replace(/[^0-9]/g, '').length;
   var r = S.route || parseHash();
   var html;
   if (r.name !== 'settings' && !S.data) html = '<div class="loading"><span class="spin"></span>불러오는 중</div>';
   else if (S.locked) html = VIEWS.lock();
   else html = (VIEWS[r.name] || VIEWS.home)(r);
   $app.innerHTML = html + toastHtml();
-  if (fid) { var el = document.getElementById(fid); if (el) { el.focus({ preventScroll: true }); try { if (sel) el.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
+  if (fid) {
+    var el = document.getElementById(fid);
+    if (el) {
+      el.focus({ preventScroll: true });
+      if (digits != null) { var v = el.value, pos = 0, cnt = 0; while (pos < v.length && cnt < digits) { if (/[0-9]/.test(v[pos])) cnt++; pos++; } sel = [pos, pos]; }
+      try { if (sel) el.setSelectionRange(sel[0], sel[1]); } catch (e) {}
+    }
+  }
   afterRender();
 }
 function nav(on) {
@@ -813,12 +822,13 @@ VIEWS.book = function (r) {
     var inner = '<div style="display:flex;align-items:center;gap:10px;min-height:60px;padding:8px 16px;background:' + (u.editId === x.id ? '#FFF6E5' : '#FFFFFF') + ';opacity:' + (u.editId && u.editId !== x.id ? 0.55 : 1) + '"><span style="flex:0 0 40px;font-size:12px;color:var(--mute)">' + esc(x.date.slice(5).replace('-', '.')) + '</span><span class="tag" style="background:' + c[0] + ';color:' + c[1] + '">' + esc(x.type) + '</span><span style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">' + esc(recTitle(x)) + '</span>' + (sub ? '<span style="font-size:12px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(sub) + '</span>' : '') + '</span><span style="flex:0 0 auto;font-size:15px;font-weight:600;color:' + (noAcct ? 'var(--ghost)' : (v > 0 ? 'var(--green)' : 'var(--ink)')) + '">' + (noAcct ? won(num(x.amount)) : signWon(v)) + '</span></div>';
     return swipeRow(x.id, inner, 'bEdit', 'bDel');
   }).join('');
-  return '<main class="with-nav"><header class="top"><h1>정산</h1></header>' + entry +
+  return '<main class="with-nav"><header class="top"><h1>정산</h1></header>' +
+    '<a href="#/ledger" aria-label="예상 카드잔액 · 가계부로 이동" style="display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:44px;padding:0 16px;border-radius:14px;background:#EEE8F8;color:var(--ink)"><span style="font-size:13px;color:#4A4458">예상 카드잔액</span><span style="font-size:16px;font-weight:700">' + won(d.L.card) + '</span></a>' + entry +
     '<section aria-label="기록" style="display:flex;flex-direction:column;gap:8px"><h2 style="margin:0;padding:0 4px;font-size:19px;font-weight:700">기록</h2>' +
     '<label class="search">' + ICON.search + '<input id="bk_q" type="search" data-m="q" data-live="1" value="' + esc(u.q) + '" placeholder="메모 · 카테고리 · 채널 · 금액 검색" aria-label="기록 검색"></label>' +
-    '<div style="display:flex;gap:8px;align-items:center"><label style="flex:1 1 0;display:flex">' + selectHtml('bk_f1', 'filter', ['전체', '지출', '수입', '대출', '투자', '급여'], u.filter, ' aria-label="분류" class="box" style="min-height:40px;padding:0 10px"') + '</label>' +
-    '<label style="flex:1 1 0;display:flex">' + selectHtml('bk_f2', 'filter2', sub2Map[u.filter] || ['세부 없음'], sub2Map[u.filter] ? u.filter2 : '세부 없음', ' aria-label="세부 분류" class="box" style="min-height:40px;padding:0 10px;' + (sub2Map[u.filter] ? '' : 'background:#EDEDF0;color:var(--faint)') + '"' + (sub2Map[u.filter] ? '' : ' disabled')) + '</label>' +
-    '<span class="eyebrow" style="flex:0 0 auto;padding:0 4px">' + recs.length + '건</span></div>' +
+    '<div style="display:flex;gap:8px"><label style="flex:1 1 0;display:flex">' + selectHtml('bk_f1', 'filter', ['전체', '지출', '수입', '대출', '투자', '급여'], u.filter, ' aria-label="분류" class="fsel" style="font-weight:600;color:var(--ink)"') + '</label>' +
+    '<label style="flex:1 1 0;display:flex">' + selectHtml('bk_f2', 'filter2', sub2Map[u.filter] || ['세부 없음'], sub2Map[u.filter] ? u.filter2 : '세부 없음', ' aria-label="세부 분류" class="fsel" style="' + (sub2Map[u.filter] ? 'background:#FFFFFF;color:var(--ink)' : 'background:#EDEDF0;color:var(--faint)') + '"' + (sub2Map[u.filter] ? '' : ' disabled')) + '</label></div>' +
+    '<div style="display:flex;justify-content:space-between;padding:2px 4px 0;font-size:13px;color:var(--mute)"><span>' + recs.length + '건</span></div>' +
     '<div class="card" style="border-radius:16px">' + (list || '<div class="empty">기록이 없어요</div>') + (recs.length > u.limit ? '<button type="button" data-a="bMore" class="text-btn" style="width:100%;font-size:14px">더 보기</button>' : '') + '</div></section></main>' + nav('book');
 };
 function recTitle(x) {
