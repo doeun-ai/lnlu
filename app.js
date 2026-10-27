@@ -766,7 +766,7 @@ VIEWS.book = function (r) {
   var curSub = u.sub[u.type];
   var isSettle = u.type === 'income' && curSub === 'settle';
   var needCh = isSettle || (u.type === 'expense' && curSub === 'extra');
-  var chOpts = isSettle ? d.chList.map(function (c) { return [c.id, (isClosed(c) ? '(퇴점) ' : '') + c.name]; }) : [['', '없음']].concat(d.chList.map(function (c) { return [c.id, (isClosed(c) ? '(퇴점) ' : '') + c.name]; }));
+  var chOpts = isSettle ? d.chList.map(function (c) { return [c.id, (isClosed(c) ? '(퇴점) ' : '') + c.name]; }) : [['', '없음']].concat(d.chList.filter(function (c) { return !isClosed(c) || c.id === u.ch; }).map(function (c) { return [c.id, (isClosed(c) ? '(퇴점) ' : '') + c.name]; }));
   if (isSettle && !u.ch && d.chList[0]) u.ch = d.chList[0].id;
   var settleOpts = [];
   if (isSettle) {
@@ -1004,7 +1004,8 @@ var ACT = {
     var d = D(), c = Object.assign({}, d.C[v], { status: '퇴점', closeDate: S.ui.date || today() });
     saveRow('channels', c);
     var ref = num(S.ui.refund);
-    if (ref > 0) saveRow('ledger', { id: uid('L'), date: c.closeDate, type: '수입', sub: '기타수입', category: '', channel: v, settleMonth: '', settleDone: false, amount: ref, memo: '입점료 환불' });
+    // 입점료 환불: 그 채널 운영비에서 빠지도록 마이너스 지출로 기록 (환불 받은 날 = 오늘)
+    if (ref > 0) saveRow('ledger', { id: uid('L'), date: today(), type: '지출', sub: '부가비용', category: '운영비', channel: v, settleMonth: '', settleDone: false, amount: -ref, memo: '입점료 환불' });
     S.ui.unpaid = D().settles.filter(function (s) { return s.ch === v && !s.done; }).length;
     S.ui.done = true; render();
   },
