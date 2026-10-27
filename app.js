@@ -116,6 +116,11 @@ function removeCode(row) {
 }
 
 // ───────── 계산 ─────────
+// 잠금: 마지막 사용 후 30분이 지나면 PIN 입력
+var LOCK_MS = 30 * 60 * 1000;
+function touch() { try { localStorage.setItem('hm_last', String(Date.now())); } catch (e) {} }
+function needLock() { var t = 0; try { t = +localStorage.getItem('hm_last') || 0; } catch (e) {} return !!S.cfg.pin && Date.now() - t > LOCK_MS; }
+function lock() { S.locked = true; S.lk = { pin: '', err: '', shake: false }; }
 var DER = null;
 function D() {
   if (DER && DER.v === S.ver) return DER;
@@ -199,7 +204,8 @@ function isClosed(c) { return c && c.status === '퇴점'; }
 function openChannels() { return D().chList.filter(function (c) { return !isClosed(c); }); }
 function chName(id) { var c = D().C[id]; return c ? c.name : (id || ''); }
 function chColor(id) { var c = D().C[id]; return (c && c.color) || '#C7C7CC'; }
-function prodName(code) { var p = D().P[code]; return p ? p.name + (p.option ? ' · ' + p.option : '') : code; }
+function prodName(code) { var p = D().P[code]; return p ? (p.option || p.name) : code; }
+function prodFull(code) { var p = D().P[code]; return p ? (p.category ? p.category + ' · ' : '') + (p.option || p.name) : code; }
 function activeProducts() { return S.data.products.filter(function (p) { return p.active !== '중지'; }); }
 function categories() { var a = []; activeProducts().forEach(function (p) { if (p.category && a.indexOf(p.category) < 0) a.push(p.category); }); return a; }
 function chStockOf(ch, code) { var s = D().chStock[ch]; return s && s[code] || 0; }
@@ -241,6 +247,7 @@ function render() {
   var r = S.route || parseHash();
   var html;
   if (r.name !== 'settings' && !S.data) html = '<div class="loading"><span class="spin"></span>불러오는 중</div>';
+  else if (S.locked) html = VIEWS.lock();
   else html = (VIEWS[r.name] || VIEWS.home)(r);
   $app.innerHTML = html + toastHtml();
   if (fid) { var el = document.getElementById(fid); if (el) { el.focus({ preventScroll: true }); try { if (sel) el.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
@@ -429,8 +436,20 @@ VIEWS.channel = function (r) {
     '<section aria-label="제품별 재고" style="display:flex;flex-direction:column;gap:8px"><div class="sec-title"><h2>제품별 재고</h2><a href="#/stock" style="font-size:14px;font-weight:600">작업실</a></div>' +
     '<div class="chips"><button type="button" class="chip warn' + (u.low ? ' on' : '') + '" data-a="toggleLow" aria-pressed="' + !!u.low + '">1개 이하</button></div>' +
     '<div class="card" style="border-radius:16px">' + (cats || '<div class="empty">입고된 제품이 없어요</div>') + '</div></section>' +
-    logSection(logs) + '</main>' + nav('channel');
+    logSection(logs) + chLedger(c.id) + '</main>' + nav('channel');
 };
+function chLedger(ch) {
+  var u = S.ui, n = u.ledMore ? 200 : 6;
+  var recs = S.data.ledger.filter(function (x) { return x.channel === ch; })
+    .sort(function (x, y) { return (y.date + (y.createdAt || '') + y.id) < (x.date + (x.createdAt || '') + x.id) ? -1 : 1; });
+  var html = recs.slice(0, n).map(function (x) {
+    var c = CHIP[x.type] || CHIP['급여'], v = recAmt(x);
+    var sub = [x.sub === '정산입금' && x.settleMonth ? keyLabel(x.settleMonth) + '분' : '', x.memo].filter(function (t) { return t; }).join(' · ');
+    return '<div style="display:flex;align-items:center;gap:10px;min-height:56px;padding:8px 16px;border-bottom:1px solid var(--line)"><span style="flex:0 0 40px;font-size:12px;color:var(--mute)">' + esc(x.date.slice(5).replace('-', '.')) + '</span><span class="tag" style="background:' + c[0] + ';color:' + c[1] + '">' + esc(x.type) + '</span><span style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:15px;font-weight:600">' + esc(recTitle(x)) + '</span>' + (sub ? '<span style="font-size:12px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(sub) + '</span>' : '') + '</span><span style="flex:0 0 auto;font-size:15px;font-weight:600;color:' + (v > 0 ? 'var(--green)' : 'var(--ink)') + '">' + signWon(v || 0) + '</span></div>';
+  }).join('');
+  return '<section aria-label="지출 · 정산 내역" style="display:flex;flex-direction:column;gap:8px"><h2 style="margin:0;padding:0 4px;font-size:19px;font-weight:700">지출 · 정산 내역</h2><div class="card" style="border-radius:16px">' + (html || '<div class="empty">이 채널로 기록한 지출·정산이 없어요</div>') +
+    (recs.length > n ? '<button type="button" data-a="ledMore" class="text-btn" style="width:100%;font-size:14px">더 보기</button>' : '') + '</div></section>';
+}
 function batches(rows) {
   var g = {}, order = [];
   rows.forEach(function (x) {
@@ -541,7 +560,11 @@ VIEWS.register = function (r) {
   if (months.indexOf(u.month) < 0) months.push(u.month);
   var head = subHead('등록', '#/home', '') +
     '<main style="padding-top:8px">' +
-    '<div style="display:flex;gap:8px;align-items:center"><div style="flex:1 1 auto">' + seg([['sale', '판매'], ['in', '입고']], u.kind, 'regKind') + '</div><div style="flex:1 1 auto">' + seg([['auto', '자동'], ['manual', '수기']], u.mode, 'regMode') + '</div></div>' +
+    '<div role="group" aria-label="등록 종류" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">' + [['sale', '판매', '#D6E6F9', '#1F3F66'], ['in', '입고', '#E2F1E6', '#1E5631']].map(function (k) {
+      var on = u.kind === k[0];
+      return '<button type="button" data-a="regKind" data-v="' + k[0] + '" aria-pressed="' + on + '" style="min-height:48px;border:' + (on ? '1.5px solid ' + k[3] : '1px solid #E5E5EA') + ';border-radius:14px;background:' + (on ? k[2] : '#FFFFFF') + ';color:' + (on ? k[3] : '#6E6E73') + ';font-size:16px;font-weight:700">' + k[1] + '</button>';
+    }).join('') + '</div>' +
+    seg([['manual', '수기 등록'], ['auto', '자동 등록']], u.mode, 'regMode') +
     '<section class="card"><label class="field"><span class="lbl">채널</span>' + selectHtml('rg_ch', 'ch', opens.map(function (x) { return [x.id, x.name]; }), u.ch) + '</label>' +
     (isSale && online ? '<label class="field"><span class="lbl">판매일</span><input id="rg_date" type="date" data-m="date" value="' + esc(u.date) + '"></label>' : '') +
     (isSale && !online ? '<label class="field"><span class="lbl">판매 월</span>' + selectHtml('rg_month', 'month', months.map(function (m) { return [m, m.slice(0, 4) + '년 ' + mLabel(m)]; }), u.month) + '</label>' : '') +
@@ -588,7 +611,7 @@ VIEWS.register = function (r) {
     var body = m.code
       ? '<div style="display:flex;align-items:center;gap:10px"><div class="nm" style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px"><b style="font-size:15px;font-weight:600">' + esc(prodName(m.code)) + '</b><small style="font-size:12px;color:var(--mute)">' + esc(info(m.code, q)) + '</small></div>' + stepper('m', String(i), m.qty, prodName(m.code)) + '</div>'
       : '<label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--warn-ink)">어떤 제품인가요? (수량 ' + q + ')' +
-        selectHtml('rg_link' + i, 'link.' + i, [['', '제품 선택']].concat(activeProducts().map(function (p) { return [p.code, prodName(p.code)]; })).concat([['skip', '이번엔 건너뛰기']]), '', ' class="box" style="min-height:40px;border:1px solid var(--line2);border-radius:10px;padding:0 10px;background:#fff"') + '</label>';
+        selectHtml('rg_link' + i, 'link.' + i, [['', '제품 선택']].concat(activeProducts().map(function (p) { return [p.code, prodFull(p.code)]; })).concat([['skip', '이번엔 건너뛰기']]), '', ' class="box" style="min-height:40px;border:1px solid var(--line2);border-radius:10px;padding:0 10px;background:#fff"') + '</label>';
     return '<div style="display:flex;flex-direction:column;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="font-size:12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m.src) + '</span>' + tag + '</div>' + body + '</div>';
   }).join('');
   return head + '<section class="card" aria-label="매칭 결과"><div style="display:flex;justify-content:space-between;align-items:center;padding:16px 16px 8px"><div style="display:flex;flex-direction:column;gap:2px"><h2>매칭 결과</h2><span class="eyebrow">' + linked + '건 연결' + (need ? ' · ' + need + '건 확인 필요' : '') + '</span></div><button type="button" class="act" data-a="rematch">다시 붙여넣기</button></div>' + rowsHtml + '</section>' +
@@ -848,7 +871,7 @@ VIEWS.ledger = function () {
     '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#4A4458"><span style="display:inline-block;width:16px;font-weight:700;color:var(--ink)">−</span>마이너스통장(대출)</span><span>' + won(L.loan) + '</span></div>' +
     '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#4A4458"><span style="display:inline-block;width:16px;font-weight:700;color:var(--ink)">−</span>개인투자금</span><span>' + won(L.personal) + '</span></div></div>' +
     '<div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;border-top:1px solid #DDD3F0"><span style="font-size:14px;font-weight:700">출금 가능 금액</span><span style="font-size:18px;font-weight:700">' + won(L.card - L.loan - L.personal) + '</span></div></section>' +
-    '<section class="card pad" aria-label="손익"><div style="display:flex;flex-direction:column;gap:4px"><span class="eyebrow">순수익 · 총매출 − 총사용금액</span><span style="font-size:30px;font-weight:700;letter-spacing:-0.02em;color:' + (profit >= 0 ? 'var(--green)' : 'var(--ink)') + '">' + won(profit) + '</span></div>' +
+    '<section class="card pad" aria-label="손익"><div style="display:flex;flex-direction:column;gap:4px"><span class="eyebrow">순수익 · 총매출 − 총사용금액</span><span style="font-size:30px;font-weight:700;letter-spacing:-0.02em;color:var(--green)">' + won(profit) + '</span></div>' +
     '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px"><div class="box2"><small>총매출 · 입금 기준</small><b style="font-size:15px;font-weight:600">' + won(L.settled) + '</b></div><div class="box2"><small>총사용금액</small><b style="font-size:15px;font-weight:600">' + won(L.spent) + '</b></div></div></section>' +
     '<section class="card" aria-label="대출금"><button type="button" data-a="tDebt" aria-expanded="' + u.debtOpen + '" style="display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:60px;padding:0 16px;border:0;background:transparent;text-align:left"><span style="font-size:17px;font-weight:700">대출금</span><span style="display:flex;align-items:center;gap:10px"><span style="font-size:17px;font-weight:700">' + won(-(L.loan + L.personal)) + '</span><span aria-hidden="true" style="color:var(--mute);font-size:12px">' + (u.debtOpen ? '▲' : '▼') + '</span></span></button>' +
     (u.debtOpen ? '<div style="padding:0 16px 8px"><div class="row" style="border-top:1px solid rgba(0,0,0,0.07)"><span style="flex:1 1 auto;color:var(--ink2)">마이너스통장(대출)</span><span style="font-weight:600">' + won(-L.loan) + '</span></div><div class="row" style="border-top:1px solid rgba(0,0,0,0.07)"><span style="flex:1 1 auto;color:var(--ink2)">개인투자금</span><span style="font-weight:600">' + won(-L.personal) + '</span></div></div>' : '') + '</section>' +
@@ -860,23 +883,26 @@ VIEWS.ledger = function () {
 };
 
 // ───────── 연결 설정 ─────────
+function keypad(st, title, act, withHead) {
+  var n = Math.max(4, st.pin.length);
+  var dots = '';
+  for (var i = 0; i < n; i++) dots += '<span style="width:14px;height:14px;border-radius:7px;' + (i < st.pin.length ? 'background:var(--ink)' : 'border:1.5px solid var(--ghost)') + '"></span>';
+  var key = function (v, label, extra) { return '<button type="button" data-a="' + act + '" data-v="' + v + '" aria-label="' + (label || v) + '" style="height:68px;border:0;border-radius:34px;background:' + (extra ? 'transparent' : '#FFFFFF') + ';font-size:' + (extra ? '16px' : '28px') + ';font-weight:' + (extra ? 600 : 500) + ';color:' + (v === 'ok' ? 'var(--blue)' : 'var(--ink)') + '">' + (label || v) + '</button>'; };
+  return '<main style="align-items:center;justify-content:center;gap:28px;min-height:' + (withHead ? 'calc(100vh - 56px)' : '100vh') + '">' +
+    '<div style="display:flex;flex-direction:column;align-items:center;gap:18px"><b style="font-size:20px">' + (st.busy ? '<span class="spin"></span>확인 중' : title) + '</b>' +
+    '<div class="' + (st.shake ? 'shake' : '') + '" style="display:flex;gap:16px;height:16px;align-items:center">' + dots + '</div>' +
+    '<span style="font-size:13px;color:var(--red);min-height:18px">' + esc(st.err || '') + '</span></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(3,68px);gap:16px 24px">' +
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(function (k) { return key(k); }).join('') +
+    key('ok', '확인', true) + key('0') + key('del', '⌫', true) + '</div>';
+}
 VIEWS.settings = function () {
   var u = S.ui;
   if (u.pin == null) u.pin = '';
-  var n = Math.max(4, u.pin.length);
-  var dots = '';
-  for (var i = 0; i < n; i++) dots += '<span style="width:14px;height:14px;border-radius:7px;' + (i < u.pin.length ? 'background:var(--ink)' : 'border:1.5px solid var(--ghost)') + '"></span>';
-  var key = function (v, label, extra) { return '<button type="button" data-a="pinKey" data-v="' + v + '" aria-label="' + (label || v) + '" style="height:68px;border:0;border-radius:34px;background:' + (extra ? 'transparent' : '#FFFFFF') + ';font-size:' + (extra ? '16px' : '28px') + ';font-weight:' + (extra ? 600 : 500) + ';color:' + (v === 'ok' ? 'var(--blue)' : 'var(--ink)') + '">' + (label || v) + '</button>'; };
-  return (S.data ? subHead('PIN 변경', '#/ledger', '') : '') + '<main style="align-items:center;justify-content:center;gap:28px;min-height:' + (S.data ? 'calc(100vh - 56px)' : '100vh') + '">' +
-    '<div style="display:flex;flex-direction:column;align-items:center;gap:18px"><b style="font-size:20px">' + (u.busy ? '<span class="spin"></span>확인 중' : 'PIN 입력') + '</b>' +
-    '<div class="' + (u.shake ? 'shake' : '') + '" style="display:flex;gap:16px;height:16px;align-items:center">' + dots + '</div>' +
-    '<span style="font-size:13px;color:var(--red);min-height:18px">' + esc(u.err || '') + '</span></div>' +
-    '<div style="display:grid;grid-template-columns:repeat(3,68px);gap:16px 24px">' +
-    ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(function (k) { return key(k); }).join('') +
-    key('ok', '확인', true) + key('0') + key('del', '⌫', true) + '</div>' +
-    (S.data ? '<button type="button" data-a="reload" class="text-btn" style="font-size:14px;color:var(--faint)">시트에서 다시 불러오기</button>' : '') +
-    '</main>';
+  return (S.data ? subHead('PIN 변경', '#/ledger', '') : '') + keypad(u, 'PIN 입력', 'pinKey', !!S.data) +
+    (S.data ? '<button type="button" data-a="reload" class="text-btn" style="font-size:14px;color:var(--faint)">시트에서 다시 불러오기</button>' : '') + '</main>';
 };
+VIEWS.lock = function () { return keypad(S.lk, 'PIN 입력', 'lockKey', false) + '</main>'; };
 
 // ───────── 이벤트 ─────────
 function setPath(obj, path, val) { var p = path.split('.'); var o = obj; for (var i = 0; i < p.length - 1; i++) o = o[p[i]] || (o[p[i]] = {}); o[p[p.length - 1]] = val; }
@@ -944,6 +970,7 @@ var ACT = {
   toggleLow: function () { S.ui.low = !S.ui.low; render(); },
   openLog: function (v) { S.ui.openLog = S.ui.openLog === +v ? null : +v; render(); },
   logMore: function () { S.ui.logMore = true; render(); },
+  ledMore: function () { S.ui.ledMore = true; render(); },
   reopen: function (v) { var c = Object.assign({}, D().C[v], { status: '운영', closeDate: '' }); saveRow('channels', c); toast('채널을 다시 열었어요'); render(); },
   chType: function (v) { var f = S.ui.f; f.type = v; f.payBase = v === '온라인' ? '일수' : '월'; f.defaultMode = v === '온라인' ? '수기' : '자동'; render(); },
   chColor: function (v) { S.ui.f.color = v; render(); },
@@ -1075,11 +1102,22 @@ var ACT = {
     else if (u.pin.length < 8) u.pin += v;
     render();
   },
+  lockKey: function (v) {
+    var k = S.lk; k.err = ''; k.shake = false;
+    if (v === 'del') k.pin = k.pin.slice(0, -1);
+    else if (v !== 'ok' && k.pin.length < 8) k.pin += v;
+    var full = k.pin.length >= S.cfg.pin.length;
+    if ((v === 'ok' && k.pin) || full) {
+      if (k.pin === S.cfg.pin) { S.locked = false; touch(); render(); return; }
+      if (v === 'ok' || full) { k.pin = ''; k.err = 'PIN이 맞지 않아요'; k.shake = true; }
+    }
+    render();
+  },
   tryPin: function () {
     var u = S.ui, prev = S.cfg.pin;
     S.cfg = { url: API_URL, pin: u.pin }; u.busy = true; render();
     api('load').then(function (d) {
-      lsSet('hm_cfg', { pin: u.pin }); S.data = d; persist(); u.busy = false; go('home');
+      lsSet('hm_cfg', { pin: u.pin }); touch(); S.data = d; persist(); u.busy = false; go('home');
     }).catch(function (e) {
       S.cfg.pin = prev; u.busy = false; u.pin = ''; u.shake = true;
       u.err = /PIN/.test(e.message) ? 'PIN이 맞지 않아요' : '연결 실패 · ' + e.message; render();
@@ -1098,6 +1136,11 @@ function afterRender() { if (S.ui.scanning && !scanStream && !zxReader && docume
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
 S.route = parseHash();
 if (!S.cfg.pin) { history.replaceState(null, '', '#/settings'); S.route = parseHash(); render(); }
-else { render(); loadAll(true); }
-document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && S.cfg.pin && S.data) loadAll(true); });
+else { if (needLock()) lock(); render(); loadAll(true); }
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'hidden') { if (!S.locked) touch(); return; }
+  if (needLock()) { lock(); render(); }
+  if (S.cfg.pin && S.data) loadAll(true);
+});
+document.addEventListener('pointerdown', function () { if (!S.locked) touch(); }, true);
 })();
