@@ -105,6 +105,17 @@ function removeRow(table, id) {
   S.data[table] = S.data[table].filter(function (r) { return r[key] !== id; }); persist();
   return push({ action: 'remove', table: table, id: id });
 }
+function removeRows(table, ids) {
+  S.data[table] = S.data[table].filter(function (r) { return ids.indexOf(r.id) < 0; }); persist();
+  return push({ action: 'removeMany', table: table, ids: ids });
+}
+function replaceRows(table, oldIds, rows) {
+  // 수정: 예전 묶음을 지우고 새 묶음 저장 (서버도 순서대로)
+  S.data[table] = S.data[table].filter(function (r) { return oldIds.indexOf(r.id) < 0; });
+  rows.forEach(function (r) { upsertLocal(table, r); }); persist();
+  return api('removeMany', { table: table, ids: oldIds }).then(function () { return api('saveMany', { table: table, rows: rows }); })
+    .catch(function (e) { toast('저장 실패 · ' + e.message); return loadAll(true); });
+}
 function saveCode(row) {
   S.data.codes = S.data.codes.filter(function (c) { return !(c.channel === row.channel && c.label === row.label); });
   S.data.codes.push(row); persist();
@@ -459,6 +470,11 @@ function chLedger(ch) {
   return '<section aria-label="지출 · 정산 내역" style="display:flex;flex-direction:column;gap:8px"><h2 style="margin:0;padding:0 4px;font-size:19px;font-weight:700">지출 · 정산 내역</h2><div class="card" style="border-radius:16px">' + (html || '<div class="empty">이 채널로 기록한 지출·정산이 없어요</div>') +
     (recs.length > n ? '<button type="button" data-a="ledMore" class="text-btn" style="width:100%;font-size:14px">더 보기</button>' : '') + '</div></section>';
 }
+function findBatch(id) {
+  var all = batches(S.data.stock);
+  for (var i = 0; i < all.length; i++) if (all[i].items.some(function (x) { return x.id === id; })) return all[i];
+  return null;
+}
 function batches(rows) {
   var g = {}, order = [];
   rows.forEach(function (x) {
@@ -477,9 +493,10 @@ function logSection(logs) {
     var text = l.kind === '판매' ? mLabel(l.saleMonth || l.date.slice(0, 7)) + ' 판매 ' + tot + '개' : (l.kind === '입고' && tot < 0 ? '회수 ' + Math.abs(tot) + '개' : l.items.length + '종 ' + tot + '개');
     if (l.kind === '입고' && l.channel && S.route.name !== 'channel') text = chName(l.channel) + ' · ' + text;
     var open = u.openLog === i, s = st[l.kind] || st['입고'];
-    return '<div style="border-bottom:1px solid var(--line)"><button type="button" data-a="openLog" data-v="' + i + '" aria-expanded="' + open + '" style="display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:0 16px;border:0;background:transparent;text-align:left">' +
+    var key = l.items[0].id;
+    return swipeRow(key, '<div><button type="button" data-a="openLog" data-v="' + i + '" aria-expanded="' + open + '" style="display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:0 16px;border:0;background:transparent;text-align:left">' +
       '<span class="tag" style="background:' + s[0] + ';color:' + s[1] + '">' + (l.kind === '하자마케팅' ? '하자·마케팅' : l.kind) + '</span><span style="flex:1 1 auto;font-size:14px;font-weight:600">' + esc(text) + '</span><span class="eyebrow">' + mdLabel(l.date) + '</span><span aria-hidden="true" style="color:var(--mute);font-size:12px">' + (open ? '▲' : '▼') + '</span></button>' +
-      (open ? '<div style="padding:0 16px 8px">' + l.items.map(function (x) { var q = num(x.qty); return '<div class="row" style="min-height:38px"><span style="flex:1 1 auto;color:var(--ink2)">' + esc(prodName(x.code)) + '</span><span style="font-weight:600;color:' + (q < 0 ? 'var(--warn-ink)' : 'var(--ink)') + '">' + (q > 0 && l.kind === '입고' ? '+' : '') + q + '개</span></div>'; }).join('') + '</div>' : '') + '</div>';
+      (open ? '<div style="padding:0 16px 8px">' + l.items.map(function (x) { var q = num(x.qty); return '<div class="row" style="min-height:38px"><span style="flex:1 1 auto;color:var(--ink2)">' + esc(prodName(x.code)) + '</span><span style="font-weight:600;color:' + (q < 0 ? 'var(--warn-ink)' : 'var(--ink)') + '">' + (q > 0 && l.kind === '입고' ? '+' : '') + q + '개</span></div>'; }).join('') + '</div>' : '') + '</div>', 'logEdit', 'logDel');
   }).join('');
   return '<section aria-label="최근 이력" style="display:flex;flex-direction:column;gap:8px"><h2 style="margin:0;padding:0 4px;font-size:19px;font-weight:700">최근 이력</h2><div class="card" style="border-radius:16px">' + (html || '<div class="empty">아직 이력이 없어요</div>') +
     (logs.length > n ? '<button type="button" data-a="logMore" class="text-btn" style="width:100%;font-size:14px">더 보기</button>' : '') + '</div></section>';
@@ -560,27 +577,34 @@ VIEWS.register = function (r) {
     u.mode = r.q.mode === 'manual' ? 'manual' : 'auto';
     u.ch = r.q.ch && d.C[r.q.ch] ? r.q.ch : (opens[0] && opens[0].id);
     u.date = today(); u.month = r.q.month || curMonth();
-    u.qty = {}; u.cat = '전체'; u.q = ''; u.paste = ''; u.matched = null;
+    u.qty = {}; u.cat = '전체'; u.q = ''; u.paste = ''; u.matched = null; u.orig = {};
+    var eb = r.q.edit && findBatch(r.q.edit);
+    if (eb) {
+      u.editIds = eb.items.map(function (x) { return x.id; }); u.created = eb.created;
+      u.kind = eb.kind === '판매' ? 'sale' : 'in'; u.mode = 'manual'; u.ch = eb.channel; u.date = eb.date; u.month = eb.saleMonth || eb.date.slice(0, 7);
+      eb.items.forEach(function (x) { u.qty[x.code] = num(x.qty); u.orig[x.code] = num(x.qty); });
+    }
   }
+  if (u.editIds && d.C[u.ch] && opens.indexOf(d.C[u.ch]) < 0) opens = opens.concat([d.C[u.ch]]);
   var c = d.C[u.ch] || {};
   var isSale = u.kind === 'sale', online = c.type === '온라인';
   var th = isSale ? ['var(--sale-bg)', 'var(--sale-ink)'] : ['var(--in-bg)', 'var(--in-ink)'];
   var months = []; for (var i = 0; i < 6; i++) months.push(addMonths(curMonth(), -i));
   if (months.indexOf(u.month) < 0) months.push(u.month);
-  var head = subHead('등록', '#/home', '') +
-    '<main style="padding-top:8px">' +
+  var head = subHead(u.editIds ? '기록 수정' : '등록', u.editIds ? '#/channel/' + encodeURIComponent(u.ch) : '#/home', '') +
+    '<main style="padding-top:8px">' + (u.editIds ? '' :
     '<div role="group" aria-label="등록 종류" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">' + [['sale', '판매', '#D6E6F9', '#1F3F66'], ['in', '입고', '#E2F1E6', '#1E5631']].map(function (k) {
       var on = u.kind === k[0];
       return '<button type="button" data-a="regKind" data-v="' + k[0] + '" aria-pressed="' + on + '" style="min-height:48px;border:' + (on ? '1.5px solid ' + k[3] : '1px solid #E5E5EA') + ';border-radius:14px;background:' + (on ? k[2] : '#FFFFFF') + ';color:' + (on ? k[3] : '#6E6E73') + ';font-size:16px;font-weight:700">' + k[1] + '</button>';
     }).join('') + '</div>' +
-    seg([['manual', '수기 등록'], ['auto', '자동 등록']], u.mode, 'regMode') +
+    seg([['manual', '수기 등록'], ['auto', '자동 등록']], u.mode, 'regMode')) +
     '<section class="card"><label class="field"><span class="lbl">채널</span>' + selectHtml('rg_ch', 'ch', opens.map(function (x) { return [x.id, x.name]; }), u.ch) + '</label>' +
     (isSale && online ? '<label class="field"><span class="lbl">판매일</span><input id="rg_date" type="date" data-m="date" value="' + esc(u.date) + '"></label>' : '') +
     (isSale && !online ? '<label class="field"><span class="lbl">판매 월</span>' + selectHtml('rg_month', 'month', months.map(function (m) { return [m, m.slice(0, 4) + '년 ' + mLabel(m)]; }), u.month) + '</label>' : '') +
     (!isSale ? '<label class="field"><span class="lbl">입고일</span><input id="rg_date" type="date" data-m="date" value="' + esc(u.date) + '"></label>' : '') + '</section>';
   var lines = [], tq = 0, kinds = 0, back = 0, warn = '';
   function info(code, q) {
-    var cs = chStockOf(u.ch, code), w = d.wsStock(code);
+    var o = num(u.orig[code]), cs = chStockOf(u.ch, code) + (isSale ? o : -o), w = d.wsStock(code) + (isSale ? 0 : o);
     if (isSale) return '매장 ' + cs + (q ? ' → ' + (cs - q) : '');
     return '매장 ' + cs + (q ? ' → ' + (cs + q) : '') + ' · 작업실 ' + w + (q ? ' → ' + (w - q) : '');
   }
@@ -602,7 +626,7 @@ VIEWS.register = function (r) {
     var summary = kinds + '종 · ' + (isSale ? '판매 ' + tq + '개' : '입고 ' + tq + '개' + (back ? ' · 회수 ' + back + '개' : '')) + warn;
     var zeroOk = isSale && !online && kinds === 0;
     return head + lines.join('') + '</main>' +
-      '<div class="footer-bar"><div class="sum">' + esc(summary) + '</div><button type="button" class="btn" data-a="regSave" style="background:' + th[0] + ';color:' + th[1] + '"' + (kinds || zeroOk ? '' : ' disabled') + '>' + (zeroOk ? mLabel(u.month) + ' 판매 0개로 등록' : (isSale ? '판매 등록' : '입고 등록')) + '</button></div>';
+      '<div class="footer-bar"><div class="sum">' + esc(summary) + '</div><button type="button" class="btn" data-a="regSave" style="background:' + th[0] + ';color:' + th[1] + '"' + (kinds || zeroOk ? '' : ' disabled') + '>' + (u.editIds ? '수정 완료' : zeroOk ? mLabel(u.month) + ' 판매 0개로 등록' : (isSale ? '판매 등록' : '입고 등록')) + '</button></div>';
   }
   // 자동
   if (!u.matched) {
@@ -690,22 +714,26 @@ VIEWS.stock = function () {
     logSection(logs) + '</main>' + nav('stock');
 };
 
-VIEWS.stockentry = function () {
+VIEWS.stockentry = function (r) {
   var u = S.ui, d = D();
-  if (!u.init) { u.init = true; u.kind = '발주'; u.date = today(); u.cat = '전체'; u.qty = {}; }
+  if (!u.init) {
+    u.init = true; u.kind = '발주'; u.date = today(); u.cat = '전체'; u.qty = {}; u.orig = {};
+    var eb = r.q.edit && findBatch(r.q.edit);
+    if (eb) { u.editIds = eb.items.map(function (x) { return x.id; }); u.created = eb.created; u.kind = eb.kind; u.date = eb.date; eb.items.forEach(function (x) { u.qty[x.code] = num(x.qty); u.orig[x.code] = num(x.qty); }); }
+  }
   var prods = activeProducts().filter(function (p) { return u.cat === '전체' || p.category === u.cat; });
   var kinds = 0, tq = 0;
   Object.keys(u.qty).forEach(function (k) { var q = num(u.qty[k]); if (q) { kinds++; tq += q; } });
   var label = u.kind === '발주' ? '발주' : '하자·마케팅';
-  return subHead('발주 등록', '#/stock', '') + '<main style="padding-top:8px">' + seg([['발주', '발주'], ['하자마케팅', '하자·마케팅']], u.kind, 'seKind') +
+  return subHead(u.editIds ? '기록 수정' : '발주 등록', '#/stock', '') + '<main style="padding-top:8px">' + (u.editIds ? '' : seg([['발주', '발주'], ['하자마케팅', '하자·마케팅']], u.kind, 'seKind')) +
     '<section class="card"><label class="field"><span class="lbl">날짜</span><input id="se_date" type="date" data-m="date" value="' + esc(u.date) + '"></label></section>' +
     chipsHtml(['전체'].concat(categories()), u.cat, 'seCat') +
     '<div class="card" style="border-radius:16px">' + prods.map(function (p) {
-      var q = num(u.qty[p.code]), s = d.wsStock(p.code);
+      var q = num(u.qty[p.code]), o = num(u.orig[p.code]), s = d.wsStock(p.code) - (u.kind === '발주' ? o : -o);
       var after = u.kind === '발주' ? s + q : s - q;
       return '<div class="prod"><div class="nm"><b>' + esc(prodName(p.code)) + '</b><small>작업실 ' + s + (q ? ' → ' + after : '') + '</small></div>' + stepper('qty', p.code, u.qty[p.code], prodName(p.code)) + '</div>';
     }).join('') + '</div></main>' +
-    '<div class="footer-bar"><div class="sum">' + kinds + '종 · ' + label + ' ' + tq + '개</div><button type="button" class="btn" data-a="seSave" style="background:' + (u.kind === '발주' ? 'var(--ord-bg)' : 'var(--loan-bg)') + ';color:' + (u.kind === '발주' ? 'var(--ord-ink)' : 'var(--loan-ink)') + '"' + (kinds ? '' : ' disabled') + '>' + label + ' 등록</button></div>';
+    '<div class="footer-bar"><div class="sum">' + kinds + '종 · ' + label + ' ' + tq + '개</div><button type="button" class="btn" data-a="seSave" style="background:' + (u.kind === '발주' ? 'var(--ord-bg)' : 'var(--loan-bg)') + ';color:' + (u.kind === '발주' ? 'var(--ord-ink)' : 'var(--loan-ink)') + '"' + (kinds ? '' : ' disabled') + '>' + label + (u.editIds ? ' 수정 완료' : ' 등록') + '</button></div>';
 };
 
 // ───────── 제품 추가 · 수정 ─────────
@@ -980,6 +1008,17 @@ var ACT = {
   toggleLow: function () { S.ui.low = !S.ui.low; render(); },
   openLog: function (v) { S.ui.openLog = S.ui.openLog === +v ? null : +v; render(); },
   logMore: function () { S.ui.logMore = true; render(); },
+  logEdit: function (v) {
+    var b = findBatch(v); if (!b) return; S.swiped = null;
+    if (b.kind === '발주' || b.kind === '하자마케팅') go('stockentry?edit=' + encodeURIComponent(v));
+    else go('register?mode=manual&edit=' + encodeURIComponent(v));
+  },
+  logDel: function (v) {
+    var b = findBatch(v); if (!b) return; S.swiped = null;
+    var rows = b.items.map(function (x) { return Object.assign({}, x); });
+    removeRows('stock', rows.map(function (x) { return x.id; }));
+    toast('기록을 삭제했어요', function () { saveRows('stock', rows); });
+  },
   ledMore: function () { S.ui.ledMore = true; render(); },
   reopen: function (v) { var c = Object.assign({}, D().C[v], { status: '운영', closeDate: '' }); saveRow('channels', c); toast('채널을 다시 열었어요'); render(); },
   chType: function (v) { var f = S.ui.f; f.type = v; f.payBase = v === '온라인' ? '일수' : '월'; f.defaultMode = v === '온라인' ? '수기' : '자동'; render(); },
@@ -1031,11 +1070,13 @@ var ACT = {
     var items = [];
     if (u.mode === 'manual') Object.keys(u.qty).forEach(function (code) { var q = num(u.qty[code]); if (q) items.push([code, q]); });
     else u.matched.forEach(function (m) { if (!m.skip && m.code && num(m.qty)) items.push([m.code, num(m.qty)]); });
-    var date = isSale && !online ? today() : (u.date || today());
+    if (u.editIds) at = u.created || at;
+    var date = isSale && !online && !u.editIds ? today() : (u.date || today());
     var sm = isSale ? (online ? date.slice(0, 7) : u.month) : '';
     var rows = items.map(function (it) { return { id: uid('S'), date: date, kind: isSale ? '판매' : '입고', channel: u.ch, code: it[0], qty: it[1], saleMonth: sm, memo: '', createdAt: at }; });
     if (!rows.length && isSale && !online) rows.push({ id: uid('S'), date: date, kind: '판매', channel: u.ch, code: '', qty: 0, saleMonth: sm, memo: '판매 없음', createdAt: at });
     if (!rows.length) return;
+    if (u.editIds) { replaceRows('stock', u.editIds, rows); toast('기록을 수정했어요'); go('channel/' + encodeURIComponent(u.ch)); return; }
     if (u.mode === 'auto') u.matched.forEach(function (m) { if (m.learn && m.code) saveCode({ channel: u.ch, label: m.token || m.label, code: m.code }); });
     saveRows('stock', rows);
     var tot = items.reduce(function (a, it) { return a + it[1]; }, 0);
@@ -1055,8 +1096,10 @@ var ACT = {
   seCat: function (v) { S.ui.cat = v; render(); },
   seSave: function () {
     var u = S.ui, at = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    if (u.editIds) at = u.created || at;
     var rows = Object.keys(u.qty).filter(function (k) { return num(u.qty[k]); }).map(function (code) { return { id: uid('S'), date: u.date || today(), kind: u.kind, channel: '', code: code, qty: num(u.qty[code]), saleMonth: '', memo: '', createdAt: at }; });
     if (!rows.length) return;
+    if (u.editIds) { replaceRows('stock', u.editIds, rows); toast('기록을 수정했어요'); go('stock'); return; }
     saveRows('stock', rows); toast((u.kind === '발주' ? '발주' : '하자·마케팅') + ' ' + rows.reduce(function (a, r) { return a + r.qty; }, 0) + '개 등록'); go('stock');
   },
   pCat: function (v) { S.ui.f.category = v; render(); },
