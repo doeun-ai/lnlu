@@ -129,7 +129,6 @@ function Spend({ data, api }) {
   const [tf, setTf] = useState('all');
   const [openId, setOpenId] = useState(null);
   const [edit, setEdit] = useState(null);
-  const [sumOpen, setSumOpen] = useState(false);
 
   const [y, m] = ym;
   const prefix = `${y}-${pad(m)}`;
@@ -231,35 +230,7 @@ function Spend({ data, api }) {
       </div>
       ${!isCur ? html`<button type="button" class="link" style="font-size:15px" onClick=${() => moveMonth((now.getFullYear() - y) * 12 + now.getMonth() + 1 - m)}>이번 달</button>` : ''}
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 4px 16px">
-      <h1 class="h1" style="margin:0">생활비</h1>
-      <button type="button" aria-expanded=${sumOpen} onClick=${() => setSumOpen(!sumOpen)} class="row" style="gap:4px;border:0;background:#fff;border-radius:16px;padding:0 12px;height:32px;font-size:14px;font-weight:600;color:var(--text2)">
-        ${sumOpen ? '요약 접기' : '요약 보기'}${I.chev(sumOpen, 12)}
-      </button>
-    </div>
-
-    ${sumOpen && html`<section class="card pad" style="margin-bottom:28px">
-      <div style="display:flex;align-items:flex-end;justify-content:space-between">
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <span class="lbl">${isCur ? '이번 달 쓴 돈' : m + '월 쓴 돈'}</span>
-          <span class="big">${fmt(spent)}<small>원</small></span>
-        </div>
-        <span style="font-size:14px;color:var(--muted);padding-bottom:6px">/ ${fmt(monthBudget)}</span>
-      </div>
-      <div style="position:relative;height:10px;border-radius:5px;background:#EDEDF0;overflow:hidden">
-        <div style=${{ position: 'absolute', left: 0, top: 0, bottom: 0, width: Math.min(100, monthBudget ? Math.floor(spent / monthBudget * 100) : 0) + '%', background: bDiff < 0 ? 'var(--orange)' : 'var(--blue)' }}></div>
-      </div>
-      <div class="grid2">
-        <div style=${bb.box}><span style=${bb.lab}>${isCur ? '이번 달 생활비' : m + '월 생활비'}</span><span style=${bb.val}>${fmt(Math.abs(bDiff))}원 ${bDiff < 0 ? '초과' : '남음'}</span></div>
-        ${isCur
-          ? html`<div style=${pb.box}><span style=${pb.lab}>오늘(${upto}일) 현황</span><span style=${pb.val}>${fmt(Math.abs(pDiff))}원 ${pDiff < 0 ? '초과' : '남음'}</span></div>`
-          : html`<div style=${box(false).box}><span style=${box(false).lab}>하루 예산</span><span style=${box(false).val}>${fmt(daily)}원</span></div>`}
-      </div>
-      <div class="row" style="gap:8px;font-size:13px;color:var(--text2)">
-        ${isCur ? html`<span style="flex:none;font-size:12px;font-weight:700;background:var(--bg);border-radius:6px;padding:3px 7px">D-${left}</span>` : ''}
-        <span>${restText}</span>
-      </div>
-    </section>`}
+    <h1 class="h1">생활비</h1>
 
     <section class="card" style="padding:16px;display:flex;flex-direction:column;gap:14px">
       <${AmtInput} value=${q.amt} onChange=${(v) => setQ(Object.assign({}, q, { amt: v }))} />
@@ -377,6 +348,46 @@ function Spend({ data, api }) {
   </div>`;
 }
 
+/* 이번 달 생활비 요약 (월 예산 탭 맨 위) */
+function LifeSummary({ data }) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + 1;
+  const D = dimOf(y, m);
+  const upto = now.getDate();
+  const prefix = `${y}-${pad(m)}`;
+  const monthBudget = sum(data.items.filter((i) => i.cat === 'life'), (i) => i.amt);
+  const spent = sum(data.spend.filter((s) => s.date.startsWith(prefix)), (r) => r.amt);
+  const daily = Math.floor(monthBudget / D);
+  const bDiff = monthBudget - spent;
+  const pDiff = Math.floor(monthBudget * upto / D) - spent;
+  const box = (over) => ({ box: { borderRadius: '12px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '2px', background: over ? 'var(--warn-bg)' : 'var(--blue-bg)' }, lab: { fontSize: '12px', color: over ? 'var(--warn)' : '#0A3C80' }, val: { fontSize: '17px', fontWeight: 700, color: over ? 'var(--warn)' : 'var(--blue-d)' } });
+  const bb = box(bDiff < 0), pb = box(pDiff < 0);
+  const left = D - upto;
+  const restText = left === 0 ? '오늘이 이번 달 마지막 날이에요'
+    : bDiff <= 0 ? `예산을 이미 다 썼어요. 남은 ${left}일은 아껴봐요`
+      : `남은 ${left}일은 하루 ${fmt(Math.floor(bDiff / left))}원까지 쓸 수 있어요`;
+  return html`<section class="card pad">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span class="lbl">이번 달 생활비 쓴 돈</span>
+        <span class="big">${fmt(spent)}<small>원</small></span>
+      </div>
+      <span style="font-size:14px;color:var(--muted);padding-bottom:6px">/ ${fmt(monthBudget)}</span>
+    </div>
+    <div style="position:relative;height:10px;border-radius:5px;background:#EDEDF0;overflow:hidden">
+      <div style=${{ position: 'absolute', left: 0, top: 0, bottom: 0, width: Math.min(100, monthBudget ? Math.floor(spent / monthBudget * 100) : 0) + '%', background: bDiff < 0 ? 'var(--orange)' : 'var(--blue)' }}></div>
+    </div>
+    <div class="grid2">
+      <div style=${bb.box}><span style=${bb.lab}>이번 달 생활비</span><span style=${bb.val}>${fmt(Math.abs(bDiff))}원 ${bDiff < 0 ? '초과' : '남음'}</span></div>
+      <div style=${pb.box}><span style=${pb.lab}>오늘(${upto}일) 현황</span><span style=${pb.val}>${fmt(Math.abs(pDiff))}원 ${pDiff < 0 ? '초과' : '남음'}</span></div>
+    </div>
+    <div class="row" style="gap:8px;font-size:13px;color:var(--text2)">
+      <span style="flex:none;font-size:12px;font-weight:700;background:var(--bg);border-radius:6px;padding:3px 7px">D-${left}</span>
+      <span>${restText}</span>
+    </div>
+  </section>`;
+}
+
 /* ───────── ② 월 예산 ───────── */
 
 function Budget({ data, api }) {
@@ -451,9 +462,12 @@ function Budget({ data, api }) {
   const lastEdit = data.config.budgetEdited ? short(data.config.budgetEdited) : '';
 
   return html`<div class="page">
-    <div class="topbar"><span class="meta">${lastEdit ? lastEdit + ' 기준' : ''}</span></div>
+    <div class="topbar"></div>
     <h1 class="h1">월 예산</h1>
 
+    <${LifeSummary} data=${data} />
+
+    <h2 class="h2" style="display:flex;justify-content:space-between"><span>월급 배분</span><span>${lastEdit ? lastEdit + ' 수정' : ''}</span></h2>
     <section class="card pad" style="gap:16px">
       <div style="display:flex;flex-direction:column;gap:4px"><span class="lbl">이번 달 예산 합계</span><span class="big">${fmt(acctA + acctB + lifeSum)}<small>원</small></span></div>
       <div class="grid2">
