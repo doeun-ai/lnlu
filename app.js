@@ -221,6 +221,7 @@ function prodFull(code) { var p = D().P[code]; return p ? (p.category ? p.catego
 function activeProducts() { return S.data.products.filter(function (p) { return p.active !== '중지'; }); }
 function categories() { var a = []; activeProducts().forEach(function (p) { if (p.category && a.indexOf(p.category) < 0) a.push(p.category); }); return a; }
 function chStockOf(ch, code) { var s = D().chStock[ch]; return s && s[code] || 0; }
+function soldOf(code) { var t = 0; S.data.stock.forEach(function (r) { if (r.kind === '판매' && r.code === code) t += num(r.qty); }); return t; }
 function chStockTotal(ch) { var s = D().chStock[ch] || {}, t = 0; Object.keys(s).forEach(function (k) { t += s[k]; }); return t; }
 function payoutText(c) {
   if (c.payBase === '일수') return '판매 후 ' + (num(c.payDays) || 7) + '일 이내 입금';
@@ -376,7 +377,7 @@ VIEWS.home = function () {
   var low = activeProducts().filter(function (p) { return d.wsStock(p.code) <= 1; }).map(function (p) {
     var parts = [], tot = d.wsStock(p.code);
     d.chList.forEach(function (c) { var q = chStockOf(c.id, p.code); if (q) { parts.push(c.name + ' ' + q); tot += q; } });
-    return '<div style="display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font-size:15px;font-weight:600">' + esc(prodName(p.code)) + '</span><span class="tag need">작업실 ' + d.wsStock(p.code) + '개</span></div><span style="font-size:12px;color:var(--mute)">전체 ' + tot + '개' + (parts.length ? ' · ' + esc(parts.join(' · ')) : '') + '</span></div>';
+    return '<div style="display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font-size:15px;font-weight:600">' + catTag(p.code) + esc(prodName(p.code)) + '</span><span class="tag need">작업실 ' + d.wsStock(p.code) + '개</span></div><span style="font-size:12px;color:var(--mute)">전체 ' + tot + '개' + (parts.length ? ' · ' + esc(parts.join(' · ')) : '') + '</span></div>';
   });
   var allStock = 0;
   activeProducts().forEach(function (p) { allStock += d.wsStock(p.code); d.chList.forEach(function (c) { allStock += chStockOf(c.id, p.code); }); });
@@ -499,7 +500,7 @@ function logSection(logs) {
     var key = l.items[0].id;
     return swipeRow(key, '<div><button type="button" data-a="openLog" data-v="' + i + '" aria-expanded="' + open + '" style="display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:0 16px;border:0;background:transparent;text-align:left">' +
       '<span class="tag" style="background:' + s[0] + ';color:' + s[1] + '">' + (l.kind === '하자마케팅' ? '하자·마케팅' : l.kind) + '</span><span style="flex:1 1 auto;font-size:14px;font-weight:600">' + esc(text) + '</span><span class="eyebrow">' + mdLabel(l.date) + '</span><span aria-hidden="true" style="color:var(--mute);font-size:12px">' + (open ? '▲' : '▼') + '</span></button>' +
-      (open ? '<div style="padding:0 16px 8px">' + l.items.map(function (x) { var q = num(x.qty); return '<div class="row" style="min-height:38px"><span style="flex:1 1 auto;color:var(--ink2)">' + esc(prodName(x.code)) + '</span><span style="font-weight:600;color:' + (q < 0 ? 'var(--warn-ink)' : 'var(--ink)') + '">' + (q > 0 && l.kind === '입고' ? '+' : '') + q + '개</span></div>'; }).join('') + '</div>' : '') + '</div>', 'logEdit', 'logDel');
+      (open ? '<div style="padding:0 16px 8px">' + l.items.map(function (x) { var q = num(x.qty); return '<div class="row" style="min-height:38px"><span style="flex:1 1 auto;color:var(--ink2)">' + catTag(x.code) + esc(prodName(x.code)) + '</span><span style="font-weight:600;color:' + (q < 0 ? 'var(--warn-ink)' : 'var(--ink)') + '">' + (q > 0 && l.kind === '입고' ? '+' : '') + q + '개</span></div>'; }).join('') + '</div>' : '') + '</div>', 'logEdit', 'logDel');
   }).join('');
   return '<section aria-label="최근 이력" style="display:flex;flex-direction:column;gap:8px"><h2 style="margin:0;padding:0 4px;font-size:19px;font-weight:700">최근 이력</h2><div class="card" style="border-radius:16px">' + (html || '<div class="empty">아직 이력이 없어요</div>') +
     (logs.length > n ? '<button type="button" data-a="logMore" class="text-btn" style="width:100%;font-size:14px">더 보기</button>' : '') + '</div></section>';
@@ -624,7 +625,7 @@ VIEWS.register = function (r) {
     lines.push(chipsHtml(cats, u.cat, 'regCat'));
     lines.push('<div class="card" style="border-radius:16px">' + (prods.length ? prods.map(function (p) {
       var q = num(u.qty[p.code]);
-      return '<div class="prod"><div class="nm"><b>' + esc(prodName(p.code)) + '</b><small>' + esc(info(p.code, q)) + '</small></div>' + stepper('qty', p.code, u.qty[p.code], prodName(p.code)) + '</div>';
+      return '<div class="prod"><div class="nm"><b>' + catTag(p.code) + esc(prodName(p.code)) + '</b><small>' + esc(info(p.code, q)) + '</small></div>' + stepper('qty', p.code, u.qty[p.code], prodName(p.code)) + '</div>';
     }).join('') : '<div class="empty">제품이 없어요</div>') + '</div>');
     var summary = kinds + '종 · ' + (isSale ? '판매 ' + tq + '개' : '입고 ' + tq + '개' + (back ? ' · 회수 ' + back + '개' : '')) + warn;
     var zeroOk = isSale && !online && kinds === 0;
@@ -645,7 +646,7 @@ VIEWS.register = function (r) {
     if (m.code) { linked++; tq += isSale ? q : Math.max(q, 0); if (q < 0) back += -q; } else need++;
     var tag = !isSale && q < 0 && m.code ? '<span class="tag back">회수</span>' : '<span class="tag ' + (m.tag === 'learn' ? 'store' : m.tag) + '">' + tagTxt[m.tag] + '</span>';
     var body = m.code
-      ? '<div style="display:flex;align-items:center;gap:10px"><div class="nm" style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px"><b style="font-size:15px;font-weight:600">' + esc(prodName(m.code)) + '</b><small style="font-size:12px;color:var(--mute)">' + esc(info(m.code, q)) + '</small></div>' + stepper('m', String(i), m.qty, prodName(m.code)) + '</div>'
+      ? '<div style="display:flex;align-items:center;gap:10px"><div class="nm" style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px"><b style="font-size:15px;font-weight:600">' + catTag(m.code) + esc(prodName(m.code)) + '</b><small style="font-size:12px;color:var(--mute)">' + esc(info(m.code, q)) + '</small></div>' + stepper('m', String(i), m.qty, prodName(m.code)) + '</div>'
       : '<label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--warn-ink)">어떤 제품인가요? (수량 ' + q + ')' +
         selectHtml('rg_link' + i, 'link.' + i, [['', '제품 선택']].concat(activeProducts().map(function (p) { return [p.code, prodFull(p.code)]; })).concat([['skip', '이번엔 건너뛰기']]), '', ' class="box" style="min-height:40px;border:1px solid var(--line2);border-radius:10px;padding:0 10px;background:#fff"') + '</label>';
     return '<div style="display:flex;flex-direction:column;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="font-size:12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m.src) + '</span>' + tag + '</div>' + body + '</div>';
@@ -702,7 +703,7 @@ VIEWS.stock = function () {
       return '<div style="display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:10px;background:#F5F5F7;min-width:0"><span style="font-size:11px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.name) + '</span><b style="font-size:15px">' + chStockOf(c.id, p.code) + '</b></div>';
     }).join('');
     var inner = '<button type="button" data-a="openProd" data-v="' + esc(p.code) + '" aria-expanded="' + open + '" style="display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:8px 16px;border:0;background:transparent;text-align:left"><span style="flex:1 1 auto;min-width:0;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + catTag(p.code) + esc(prodName(p.code)) + '</span><span style="font-size:15px;font-weight:700;color:' + (s <= 1 ? 'var(--warn-ink)' : 'var(--ink)') + '">' + s + '개</span></button>' +
-      (open ? '<div style="padding:0 16px 6px;font-size:12px;color:var(--mute)">발주 ' + w.order + ' · 하자·마케팅 ' + w.dm + ' · 입점 ' + w.inq + '</div><div class="grid4" style="padding:0 16px 12px">' + split + '</div>' : '');
+      (open ? '<div style="padding:0 16px 6px;font-size:12px;color:var(--mute)">발주 ' + w.order + ' · 하자·마케팅 ' + w.dm + ' · 입점 ' + w.inq + ' (판매 ' + soldOf(p.code) + ')</div><div class="grid4" style="padding:0 16px 12px">' + split + '</div>' : '');
     return swipeRow(p.code, inner, 'editProd', 'delProd');
   }).join('');
   var logs = batches(S.data.stock.filter(function (x) { return x.kind === '발주' || x.kind === '하자마케팅'; }));
@@ -734,7 +735,7 @@ VIEWS.stockentry = function (r) {
     '<div class="card" style="border-radius:16px">' + prods.map(function (p) {
       var q = num(u.qty[p.code]), o = num(u.orig[p.code]), s = d.wsStock(p.code) - (u.kind === '발주' ? o : -o);
       var after = u.kind === '발주' ? s + q : s - q;
-      return '<div class="prod"><div class="nm"><b>' + esc(prodName(p.code)) + '</b><small>작업실 ' + s + (q ? ' → ' + after : '') + '</small></div>' + stepper('qty', p.code, u.qty[p.code], prodName(p.code)) + '</div>';
+      return '<div class="prod"><div class="nm"><b>' + catTag(p.code) + esc(prodName(p.code)) + '</b><small>작업실 ' + s + (q ? ' → ' + after : '') + '</small></div>' + stepper('qty', p.code, u.qty[p.code], prodName(p.code)) + '</div>';
     }).join('') + '</div></main>' +
     '<div class="footer-bar"><div class="sum">' + kinds + '종 · ' + label + ' ' + tq + '개</div><button type="button" class="btn" data-a="seSave" style="background:' + (u.kind === '발주' ? 'var(--ord-bg)' : 'var(--loan-bg)') + ';color:' + (u.kind === '발주' ? 'var(--ord-ink)' : 'var(--loan-ink)') + '"' + (kinds ? '' : ' disabled') + '>' + label + (u.editIds ? ' 수정 완료' : ' 등록') + '</button></div>';
 };
