@@ -397,9 +397,34 @@ VIEWS.home = function () {
       return '<a class="list-row" href="' + t.href + '"><span class="dot" style="background:' + t.dot + '"></span><span style="flex:1 1 auto;font-size:14px;font-weight:600;color:' + (t.red ? 'var(--red)' : 'var(--ink)') + '">' + esc(t.title) + (t.est ? '<span style="margin-left:6px;font-size:12px;font-weight:400;color:var(--faint)">' + esc(t.est) + '</span>' : '') + '</span><span class="act ' + t.cls + '">' + t.act + '</span></a>';
     }).join('') : '<div style="padding:14px 16px 18px;font-size:14px;color:#1A6B30">판매수량 등록과 정산이 모두 끝났어요</div>') + '</section>' +
     '<div class="tiles"><a class="tile" href="#/register?kind=sale&mode=manual" style="background:#D6E6F9;color:#1F3F66"><b>수기 판매등록</b><span style="color:#3B5A80">한 건씩</span></a><a class="tile" href="#/register?kind=sale&mode=auto" style="background:#FCE4D8;color:#6B3015"><b>자동 판매등록</b><span style="color:#8A5038">붙여넣기로 한 번에</span></a></div>' +
+    topCard(m) +
     '<section aria-label="재고 확인" style="display:flex;flex-direction:column;gap:8px"><div class="sec-title"><h2>재고 확인</h2><span class="eyebrow">지금 기준 · 전체 ' + allStock + '개</span></div><div class="card" style="border-radius:16px">' + (low.length ? low.join('') : '<div class="empty">작업실 재고가 3개 이하인 제품이 없어요</div>') + '</div></section>' +
     '</main>' + nav('home');
 };
+
+function topCard(m) {
+  var d = D(), u = S.ui, ch = u.topCh || '전체';
+  var cnt = {}, chs = {};
+  S.data.stock.forEach(function (r) {
+    if (r.kind !== '판매' || !r.code) return;
+    if ((r.saleMonth || String(r.date).slice(0, 7)) !== m) return;
+    chs[r.channel] = true;
+    if (ch !== '전체' && r.channel !== ch) return;
+    cnt[r.code] = (cnt[r.code] || 0) + num(r.qty);
+  });
+  var list = Object.keys(cnt).filter(function (k) { return cnt[k] > 0; }).sort(function (a, b) { return cnt[b] - cnt[a]; });
+  var n = u.topMore ? list.length : 5;
+  var opts = [['전체', '전체']].concat(d.chList.filter(function (c) { return chs[c.id]; }).map(function (c) { return [c.id, c.name]; }));
+  if (ch !== '전체' && !chs[ch]) opts.push([ch, chName(ch)]);
+  var max = list.length ? cnt[list[0]] : 1;
+  var rows = list.slice(0, n).map(function (code, i) {
+    return '<div style="display:flex;align-items:center;gap:10px;min-height:44px;padding:4px 16px;border-top:1px solid var(--line)"><span style="flex:0 0 18px;font-size:13px;font-weight:700;color:' + (i < 3 ? 'var(--blue)' : 'var(--faint)') + '">' + (i + 1) + '</span><span style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + catTag(code) + esc(prodName(code)) + '</span><span style="height:4px;border-radius:2px;background:#F2F2F7"><span style="display:block;height:100%;width:' + Math.round(cnt[code] / max * 100) + '%;border-radius:2px;background:' + (ch === '전체' ? '#A7C4E5' : chColor(ch)) + '"></span></span></span><span style="flex:0 0 auto;font-size:14px;font-weight:700">' + cnt[code] + '개</span></div>';
+  }).join('');
+  return '<section class="card" aria-label="많이 팔린 제품"><div style="display:flex;justify-content:space-between;align-items:baseline;padding:16px 16px 10px"><h2>' + mLabel(m) + ' 많이 팔린 제품</h2></div>' +
+    '<div style="padding:0 16px 10px">' + chipsHtml(opts, ch, 'topCh') + '</div>' +
+    (rows || '<div class="empty" style="border-top:1px solid var(--line)">' + (opts.length > 1 || ch !== '전체' ? '이 채널은 이 달 판매가 없어요' : '이 달 등록된 판매가 없어요') + '</div>') +
+    (list.length > 5 ? '<button type="button" data-a="topMore" class="text-btn" style="width:100%;font-size:14px;border-top:1px solid var(--line)">' + (u.topMore ? '접기' : '전체 ' + list.length + '종 보기') + '</button>' : '') + '</section>';
+}
 
 // ───────── 채널 ─────────
 VIEWS.channel = function (r) {
@@ -1017,6 +1042,8 @@ var ACT = {
   toggleLow: function () { S.ui.low = !S.ui.low; render(); },
   openLog: function (v) { S.ui.openLog = S.ui.openLog === +v ? null : +v; render(); },
   logMore: function () { S.ui.logMore = true; render(); },
+  topCh: function (v) { S.ui.topCh = v; S.ui.topMore = false; render(); },
+  topMore: function () { S.ui.topMore = !S.ui.topMore; render(); },
   openLow: function (v) { S.ui.openLow = S.ui.openLow === v ? null : v; render(); },
   logEdit: function (v) {
     var b = findBatch(v); if (!b) return; S.swiped = null;
