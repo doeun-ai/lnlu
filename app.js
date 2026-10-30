@@ -374,10 +374,15 @@ VIEWS.home = function () {
   var prevQ = u.mi > 0 ? totals[u.mi - 1] : null;
   var note = missing ? '위탁 매장 ' + missing + '곳 수량이 아직 없어서 집계 중이에요' : (prevQ !== null ? '전월 대비 판매수량 ' + (qty - prevQ >= 0 ? '+' : '−') + Math.abs(qty - prevQ) + '개' : '');
   // 재고 확인
-  var low = activeProducts().filter(function (p) { return d.wsStock(p.code) <= 1; }).map(function (p) {
-    var parts = [], tot = d.wsStock(p.code);
-    d.chList.forEach(function (c) { var q = chStockOf(c.id, p.code); if (q) { parts.push(c.name + ' ' + q); tot += q; } });
-    return '<div style="display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font-size:15px;font-weight:600">' + catTag(p.code) + esc(prodName(p.code)) + '</span><span class="tag need">작업실 ' + d.wsStock(p.code) + '개</span></div><span style="font-size:12px;color:var(--mute)">전체 ' + tot + '개' + (parts.length ? ' · ' + esc(parts.join(' · ')) : '') + '</span></div>';
+  var low = activeProducts().filter(function (p) { return d.wsStock(p.code) <= 3; }).map(function (p) {
+
+
+    var open = S.ui.openLow === p.code;
+    var split = d.chList.filter(function (c) { return chStockOf(c.id, p.code) || !isClosed(c); }).map(function (c) {
+      return '<div style="display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:10px;background:#F5F5F7;min-width:0"><span style="font-size:11px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.name) + '</span><b style="font-size:15px">' + chStockOf(c.id, p.code) + '</b></div>';
+    }).join('');
+    return '<div style="border-bottom:1px solid var(--line)"><button type="button" data-a="openLow" data-v="' + esc(p.code) + '" aria-expanded="' + open + '" style="display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;min-height:48px;padding:8px 16px;border:0;background:transparent;text-align:left"><span style="font-size:15px;font-weight:600">' + catTag(p.code) + esc(prodName(p.code)) + '</span><span style="flex:0 0 auto;display:flex;align-items:center;gap:6px"><span class="tag need">작업실 ' + d.wsStock(p.code) + '</span><span style="font-size:12px;color:var(--faint)">매장 ' + d.chList.reduce(function (a, c) { return a + chStockOf(c.id, p.code); }, 0) + '</span></span></button>' +
+      (open ? '<div class="grid4" style="padding:0 16px 12px">' + split + '</div>' : '') + '</div>';
   });
   var allStock = 0;
   activeProducts().forEach(function (p) { allStock += d.wsStock(p.code); d.chList.forEach(function (c) { allStock += chStockOf(c.id, p.code); }); });
@@ -392,7 +397,7 @@ VIEWS.home = function () {
       return '<a class="list-row" href="' + t.href + '"><span class="dot" style="background:' + t.dot + '"></span><span style="flex:1 1 auto;font-size:14px;font-weight:600;color:' + (t.red ? 'var(--red)' : 'var(--ink)') + '">' + esc(t.title) + (t.est ? '<span style="margin-left:6px;font-size:12px;font-weight:400;color:var(--faint)">' + esc(t.est) + '</span>' : '') + '</span><span class="act ' + t.cls + '">' + t.act + '</span></a>';
     }).join('') : '<div style="padding:14px 16px 18px;font-size:14px;color:#1A6B30">판매수량 등록과 정산이 모두 끝났어요</div>') + '</section>' +
     '<div class="tiles"><a class="tile" href="#/register?kind=sale&mode=manual" style="background:#D6E6F9;color:#1F3F66"><b>수기 판매등록</b><span style="color:#3B5A80">한 건씩</span></a><a class="tile" href="#/register?kind=sale&mode=auto" style="background:#FCE4D8;color:#6B3015"><b>자동 판매등록</b><span style="color:#8A5038">붙여넣기로 한 번에</span></a></div>' +
-    '<section aria-label="재고 확인" style="display:flex;flex-direction:column;gap:8px"><div class="sec-title"><h2>재고 확인</h2><span class="eyebrow">지금 기준 · 전체 ' + allStock + '개</span></div><div class="card" style="border-radius:16px">' + (low.length ? low.join('') : '<div class="empty">작업실 재고가 1개 이하인 제품이 없어요</div>') + '</div></section>' +
+    '<section aria-label="재고 확인" style="display:flex;flex-direction:column;gap:8px"><div class="sec-title"><h2>재고 확인</h2><span class="eyebrow">지금 기준 · 전체 ' + allStock + '개</span></div><div class="card" style="border-radius:16px">' + (low.length ? low.join('') : '<div class="empty">작업실 재고가 3개 이하인 제품이 없어요</div>') + '</div></section>' +
     '</main>' + nav('home');
 };
 
@@ -1012,6 +1017,7 @@ var ACT = {
   toggleLow: function () { S.ui.low = !S.ui.low; render(); },
   openLog: function (v) { S.ui.openLog = S.ui.openLog === +v ? null : +v; render(); },
   logMore: function () { S.ui.logMore = true; render(); },
+  openLow: function (v) { S.ui.openLow = S.ui.openLow === v ? null : v; render(); },
   logEdit: function (v) {
     var b = findBatch(v); if (!b) return; S.swiped = null;
     if (b.kind === '발주' || b.kind === '하자마케팅') go('stockentry?edit=' + encodeURIComponent(v));
