@@ -137,3 +137,5 @@ video.scan { width: 100%; border-radius: 12px; background: #000; }
 @keyframes shk { 20%,60% { transform: translateX(-8px); } 40%,80% { transform: translateX(8px); } }
 select.fsel { width: 100%; min-height: 40px; padding: 0 10px; border: 0; border-radius: 10px; background: #FFFFFF; font-size: 14px; }
 #bk_amt:focus-visible { outline: none; }
+[data-nav] { touch-action: pan-y; }
+.swipe .front, [data-nav] { -webkit-user-select: none; user-select: none; }
