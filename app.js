@@ -349,7 +349,9 @@ VIEWS.home = function () {
   d.chList.forEach(function (c) {
     if (c.type !== '위탁' || isClosed(c)) return;
     var start = c.openDate ? c.openDate.slice(0, 7) : addMonths(cm, -1);
-    for (var mm = start; mm <= cm; mm = addMonths(mm, 1)) {
+    // 이번 달 판매수량은 25일부터 TO-DO에 표시
+    var lastM = +today().slice(8, 10) >= 25 ? cm : addMonths(cm, -1);
+    for (var mm = start; mm <= lastM; mm = addMonths(mm, 1)) {
       if (d.reg[c.id] && d.reg[c.id][mm]) continue;
       todos.push({ o: 1, title: c.name + ' ' + mLabel(mm) + ' 판매수량', est: '', red: false, dot: '#F4A88A', act: '등록', cls: '', href: '#/register?kind=sale&mode=' + (c.defaultMode === '수기' ? 'manual' : 'auto') + '&ch=' + encodeURIComponent(c.id) + '&month=' + mm });
     }
