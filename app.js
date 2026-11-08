@@ -378,7 +378,10 @@ VIEWS.home = function () {
       if (left <= 14) todos.push({ o: 1, title: c.name + ' 입점 계약 연장', est: mdLabel(c.contractEnd) + ' 종료', red: left < 0, dot: '#F6D57E', act: '설정', cls: '', href: '#/chset/' + encodeURIComponent(c.id) });
     });
   }
+  var lowN = activeProducts().filter(function (p) { return d.wsStock(p.code) <= 3; }).length;
   todos.sort(function (a, b) { return a.o - b.o; });
+  // 재고 확인은 항상 맨 아래
+  if (lowN) todos.push({ o: 9, title: '재고 확인', est: '작업실 3개 이하 ' + lowN + '종', red: false, dot: '#C7C7CC', act: '보기', cls: '', href: '#/stock' });
   var qOf = function (mm) { var t = 0; d.chList.forEach(function (c) { var s = d.sales[c.id] && d.sales[c.id][mm]; if (s) t += s.qty; }); return t; };
   var totals = months.map(qOf), maxQ = Math.max.apply(null, totals.concat([1]));
   var bars = months.map(function (mm, i) {
@@ -390,18 +393,6 @@ VIEWS.home = function () {
   var prevQ = u.mi > 0 ? totals[u.mi - 1] : null;
   var note = missing ? '위탁 매장 ' + missing + '곳 수량이 아직 없어서 집계 중이에요' : (prevQ !== null ? '전월 대비 판매수량 ' + (qty - prevQ >= 0 ? '+' : '−') + Math.abs(qty - prevQ) + '개' : '');
   // 재고 확인
-  var low = activeProducts().filter(function (p) { return d.wsStock(p.code) <= 3; }).map(function (p) {
-
-
-    var open = S.ui.openLow === p.code;
-    var split = d.chList.filter(function (c) { return chStockOf(c.id, p.code) || !isClosed(c); }).map(function (c) {
-      return '<div style="display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:10px;background:#F5F5F7;min-width:0"><span style="font-size:11px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.name) + '</span><b style="font-size:15px">' + chStockOf(c.id, p.code) + '</b></div>';
-    }).join('');
-    return '<div style="border-bottom:1px solid var(--line)"><button type="button" data-a="openLow" data-v="' + esc(p.code) + '" aria-expanded="' + open + '" style="display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;min-height:48px;padding:8px 16px;border:0;background:transparent;text-align:left"><span style="font-size:15px;font-weight:600">' + catTag(p.code) + esc(prodName(p.code)) + '</span><span style="flex:0 0 auto;display:flex;align-items:center;gap:6px"><span class="tag need">작업실 ' + d.wsStock(p.code) + '</span><span style="font-size:12px;color:var(--faint)">매장 ' + d.chList.reduce(function (a, c) { return a + chStockOf(c.id, p.code); }, 0) + '</span></span></button>' +
-      (open ? '<div class="grid4" style="padding:0 16px 12px">' + split + '</div>' : '') + '</div>';
-  });
-  var allStock = 0;
-  activeProducts().forEach(function (p) { allStock += d.wsStock(p.code); d.chList.forEach(function (c) { allStock += chStockOf(c.id, p.code); }); });
   return '<main class="with-nav">' +
     '<header class="top"><div style="display:flex;flex-direction:column;gap:4px"><span class="eyebrow">' + m.slice(0, 4) + '년</span><h1>홈</h1></div>' +
     '<div class="pill" role="group" aria-label="월 선택"><button type="button" data-a="homePrev" aria-label="이전 달"' + (u.mi === 0 ? ' disabled' : '') + '>' + ICON.prev + '</button><span>' + mLabel(m) + '</span><button type="button" data-a="homeNext" aria-label="다음 달"' + (u.mi === 5 ? ' disabled' : '') + '>' + ICON.next + '</button></div></header>' +
@@ -414,7 +405,6 @@ VIEWS.home = function () {
     }).join('') : '<div style="padding:14px 16px 18px;font-size:14px;color:#1A6B30">판매수량 등록과 정산이 모두 끝났어요</div>') + '</section>' +
     '<div class="tiles"><a class="tile" href="#/register?kind=sale&mode=manual" style="background:#D6E6F9;color:#1F3F66"><b>수기 판매등록</b><span style="color:#3B5A80">한 건씩</span></a><a class="tile" href="#/register?kind=sale&mode=auto" style="background:#FCE4D8;color:#6B3015"><b>자동 판매등록</b><span style="color:#8A5038">붙여넣기로 한 번에</span></a></div>' +
     topCard(m) +
-    '<section aria-label="재고 확인" style="display:flex;flex-direction:column;gap:8px"><div class="sec-title"><h2>재고 확인</h2><span class="eyebrow">지금 기준 · 전체 ' + allStock + '개</span></div><div class="card" style="border-radius:16px">' + (low.length ? low.join('') : '<div class="empty">작업실 재고가 3개 이하인 제품이 없어요</div>') + '</div></section>' +
     '</main>' + nav('home');
 };
 
@@ -733,12 +723,12 @@ function parsePaste(text, ch) {
 // ───────── 작업실 ─────────
 VIEWS.stock = function () {
   var d = D(), u = S.ui;
-  if (!u.cat) u.cat = '전체';
+  if (!u.cat) u.cat = '재고 확인';
   var tot = { order: 0, dm: 0, inq: 0 };
   activeProducts().forEach(function (p) { var w = d.ws[p.code]; if (w) { tot.order += w.order; tot.dm += w.dm; tot.inq += w.inq; } });
   var qq = normTxt(u.q);
   var prods = activeProducts().filter(function (p) {
-    if (u.cat === '1개 이하') { if (d.wsStock(p.code) > 1) return false; }
+    if (u.cat === '재고 확인') { if (d.wsStock(p.code) > 3) return false; }
     else if (u.cat !== '전체' && p.category !== u.cat) return false;
     if (qq && normTxt(p.name + p.option + p.code).indexOf(qq) < 0) return false;
     return true;
@@ -748,7 +738,7 @@ VIEWS.stock = function () {
     var split = d.chList.filter(function (c) { return chStockOf(c.id, p.code) || (!isClosed(c)); }).map(function (c) {
       return '<div style="display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:10px;background:#F5F5F7;min-width:0"><span style="font-size:11px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.name) + '</span><b style="font-size:15px">' + chStockOf(c.id, p.code) + '</b></div>';
     }).join('');
-    var inner = '<button type="button" data-a="openProd" data-v="' + esc(p.code) + '" aria-expanded="' + open + '" style="display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:8px 16px;border:0;background:transparent;text-align:left"><span style="flex:1 1 auto;min-width:0;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + catTag(p.code) + esc(prodName(p.code)) + '</span><span style="font-size:15px;font-weight:700;color:' + (s <= 1 ? 'var(--warn-ink)' : 'var(--ink)') + '">' + s + '개</span></button>' +
+    var inner = '<button type="button" data-a="openProd" data-v="' + esc(p.code) + '" aria-expanded="' + open + '" style="display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:8px 16px;border:0;background:transparent;text-align:left"><span style="flex:1 1 auto;min-width:0;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + catTag(p.code) + esc(prodName(p.code)) + '</span><span style="flex:0 0 auto;display:flex;align-items:center;gap:6px"><span class="tag' + (s <= 3 ? ' need' : '') + '"' + (s <= 3 ? '' : ' style="background:#F2F2F7;color:var(--ink)"') + '>작업실 ' + s + '</span><span style="font-size:12px;color:var(--faint)">매장 ' + d.chList.reduce(function (a, c) { return a + chStockOf(c.id, p.code); }, 0) + '</span></span></button>' +
       (open ? '<div style="padding:0 16px 6px;font-size:12px;color:var(--mute)">발주 ' + w.order + ' · 하자·마케팅 ' + w.dm + ' · 입점 ' + w.inq + ' (판매 ' + soldOf(p.code) + ')</div><div class="grid4" style="padding:0 16px 12px">' + split + '</div>' : '');
     return swipeRow(p.code, inner, 'editProd', 'delProd');
   }).join('');
@@ -759,7 +749,7 @@ VIEWS.stock = function () {
     '<div class="tiles"><a class="tile" href="#/stockentry" style="background:var(--ord-bg);color:var(--ord-ink);min-height:56px"><b>발주 등록</b></a><a class="tile" href="#/register?kind=in&mode=manual" style="background:var(--in-bg);color:var(--in-ink);min-height:56px"><b>입고 등록</b></a></div>' +
     '<section aria-label="제품별 재고" style="display:flex;flex-direction:column;gap:8px"><div class="sec-title"><h2>제품</h2><span class="eyebrow">' + activeProducts().length + '종</span></div>' +
     '<label class="search">' + ICON.search + '<input id="st_q" type="search" data-m="q" data-live="1" value="' + esc(u.q || '') + '" placeholder="제품 검색" aria-label="제품 검색"></label>' +
-    chipsHtml(['전체'].concat(categories()).concat(['1개 이하']), u.cat, 'stCat', function (v) { return v === '1개 이하' ? 'warn' : ''; }) +
+    chipsHtml(['재고 확인', '전체'].concat(categories()), u.cat, 'stCat', function (v) { return v === '재고 확인' ? 'warn' : ''; }) +
     '<div class="card" style="border-radius:16px">' + (rows || '<div class="empty">제품이 없어요</div>') + '</div></section>' +
     logSection(logs) + '</main>' + nav('stock');
 };
